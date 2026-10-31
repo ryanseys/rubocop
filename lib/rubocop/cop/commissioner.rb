@@ -10,6 +10,11 @@ module RuboCop
       RESTRICTED_CALLBACKS = %i[on_send on_csend after_send after_csend].freeze
       private_constant :RESTRICTED_CALLBACKS
 
+      # A run sees only a few distinct lists of cop classes, one per config and
+      # kind of file, so this many is plenty.
+      MAX_CALLBACK_TABLES = 64
+      private_constant :MAX_CALLBACK_TABLES
+
       # How a Commissioner returns the results of the investigation
       # as a list of Cop::InvestigationReport and any errors caught
       # during the investigation.
@@ -40,6 +45,48 @@ module RuboCop
       end
 
       attr_reader :errors
+
+      class << self
+        # The callback tables for a list of cop classes, holding indices into
+        # the list. Building them is a large part of the cost of a file when
+        # many cops are enabled, so they are built once per list.
+        #
+        # @api private
+        # @return [Array(Hash, Hash)] the callbacks and the restricted callbacks
+        def callback_tables(cop_classes)
+          @callback_tables ||= {}
+          @callback_tables.fetch(cop_classes) do
+            @callback_tables.clear if @callback_tables.size >= MAX_CALLBACK_TABLES
+            @callback_tables[cop_classes.freeze] = build_callback_tables(cop_classes)
+          end
+        end
+
+        private
+
+        def build_callback_tables(cop_classes)
+          callbacks = {}
+          cop_classes.each_with_index do |cop_class, index|
+            cop_class.callbacks_needed.each do |callback|
+              (callbacks[callback] ||= []) << index
+            end
+          end
+          restricted = RESTRICTED_CALLBACKS.to_h do |callback|
+            [callback, restricted_table(cop_classes, callbacks[callback])]
+          end
+          [callbacks.freeze, restricted.freeze]
+        end
+
+        # NOTE: mutates `indices` in place
+        def restricted_table(cop_classes, indices)
+          table = {}
+          indices&.select! do |index|
+            restrictions = cop_classes[index].send :restrict_on_send
+            restrictions.each { |name| (table[name] ||= []) << index }
+            restrictions.empty?
+          end
+          table
+        end
+      end
 
       def initialize(cops, forces = [], options = {})
         @cops = cops
@@ -116,26 +163,11 @@ module RuboCop
       end
 
       def initialize_callbacks
-        @callbacks = build_callbacks(@cops)
-        @restricted_map = restrict_callbacks(@callbacks)
-      end
-
-      def build_callbacks(cops)
-        callbacks = {}
-        cops.each do |cop|
-          cop.callbacks_needed.each do |callback|
-            (callbacks[callback] ||= []) << cop
-          end
+        callbacks, restricted = self.class.callback_tables(@cops.map(&:class))
+        @callbacks = callbacks.transform_values { |indices| @cops.values_at(*indices) }
+        @restricted_map = restricted.transform_values do |table|
+          table.transform_values { |indices| @cops.values_at(*indices) }
         end
-        callbacks
-      end
-
-      def restrict_callbacks(callbacks)
-        restricted = {}
-        RESTRICTED_CALLBACKS.each do |callback|
-          restricted[callback] = restricted_map(callbacks[callback])
-        end
-        restricted
       end
 
       def trigger_restricted_cops(event, node)
@@ -145,17 +177,6 @@ module RuboCop
             cop.public_send(event, node)
           end
         end
-      end
-
-      # NOTE: mutates `callbacks` in place
-      def restricted_map(callbacks)
-        map = {}
-        callbacks&.select! do |cop|
-          restrictions = cop.class.send :restrict_on_send
-          restrictions.each { |name| (map[name] ||= []) << cop }
-          restrictions.empty?
-        end
-        map
       end
 
       def invoke(callback, cops)

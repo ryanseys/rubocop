@@ -68,6 +68,22 @@ RSpec.describe RuboCop::Cop::Commissioner do
       offenses
     end
 
+    context 'when another commissioner has cops of the same classes' do
+      let(:other_cop) do
+        cop_class.new.tap do |c|
+          allow(c).to receive(:complete_investigation).and_return(cop_report)
+        end
+      end
+
+      it 'calls the callbacks of its own cops' do
+        described_class.new([other_cop], forces).investigate(processed_source)
+
+        expect(cop).to receive(:on_int).once
+        expect(other_cop).not_to receive(:on_int)
+        offenses
+      end
+    end
+
     context 'traverses the AST with on_send / on_csend' do
       let(:source) { 'foo; var = bar; var&.baz' }
 
