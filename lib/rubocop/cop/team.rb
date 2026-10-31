@@ -92,6 +92,8 @@ module RuboCop
         @options = options
         @standby_registry = nil
         @standby_cops = {}
+        @path_independent_relevance = {}.compare_by_identity
+        @enabled_for_config = {}.compare_by_identity
         reset
         @ready = true
         @registry = Registry.new(cops, options.dup)
@@ -261,12 +263,40 @@ module RuboCop
       end
 
       def roundup_relevant_cops(processed_source)
-        (cops + opted_in_standby_cops(processed_source)).select do |cop|
-          next false if cop.excluded_file?(processed_source.file_path)
-          next true if processed_source.comment_config.cop_opted_in?(cop)
-          next false unless @registry.enabled?(cop, @config)
+        file_path = processed_source.file_path
+        comment_config = processed_source.comment_config
 
-          support_target_ruby_version?(cop) && support_target_rails_version?(cop)
+        (cops + opted_in_standby_cops(processed_source)).select do |cop|
+          relevant_file_for_cop?(cop, file_path) &&
+            (enabled_for_config?(cop) || comment_config.cop_opted_in?(cop))
+        end
+      end
+
+      # Cops are instantiated afresh for every file, so the answers that do not
+      # depend on the file are kept per cop class: a team has a single config.
+      def relevant_file_for_cop?(cop, file_path)
+        relevant = @path_independent_relevance.fetch(cop.class) do |cop_class|
+          @path_independent_relevance[cop_class] =
+            (cop.relevant_file?(file_path) if path_independent_relevance?(cop))
+        end
+        relevant.nil? ? !cop.excluded_file?(file_path) : relevant
+      end
+
+      # Without `Include` or `Exclude`, `Base#relevant_file?` only checks the
+      # target's gem versions, which come from the config.
+      def path_independent_relevance?(cop)
+        cop_class = cop.class
+
+        cop_class.instance_method(:relevant_file?).owner == Base &&
+          cop_class.instance_method(:excluded_file?).owner == Base &&
+          !cop.config.clusivity_config_for_badge?(cop_class.badge)
+      end
+
+      def enabled_for_config?(cop)
+        @enabled_for_config.fetch(cop.class) do |cop_class|
+          @enabled_for_config[cop_class] = @registry.enabled?(cop, @config) &&
+                                           support_target_ruby_version?(cop) &&
+                                           support_target_rails_version?(cop)
         end
       end
 

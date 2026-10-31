@@ -22,8 +22,15 @@ module RuboCop
       @strings = Set.new
       @patterns = []
       @match_cache = {}
+      @absolute_patterns = patterns.select do |pattern|
+        PathUtil.absolute?(pattern.to_s) || pattern.to_s.start_with?('..')
+      end.freeze
       partition_patterns(patterns)
     end
+
+    # The patterns that are matched against the absolute path of a file: the
+    # absolute ones and the ones that climb out of the base directory.
+    attr_reader :absolute_patterns
 
     def match?(path)
       # `FilePatterns.from` memoizes one instance per pattern array (by identity),

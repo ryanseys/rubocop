@@ -559,11 +559,11 @@ module RuboCop
       end
 
       def matches_absolute_include_pattern?(patterns, file)
+        absolute_patterns = FilePatterns.from(patterns).absolute_patterns
+        return false if absolute_patterns.empty?
+
         absolute_file_path = absolute?(file) ? file : File.expand_path(file)
-        patterns.any? do |pattern|
-          (absolute?(pattern.to_s) || pattern.to_s.start_with?('..')) &&
-            match_path?(pattern, absolute_file_path)
-        end
+        absolute_patterns.any? { |pattern| match_path?(pattern, absolute_file_path) }
       end
 
       def enabled_line?(line_number)
