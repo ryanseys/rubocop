@@ -92,7 +92,8 @@ module RuboCop
         @options = options
         @standby_registry = nil
         @standby_cops = {}
-        @path_independent_relevance = {}.compare_by_identity
+        @relevance_depends_on_file = {}.compare_by_identity
+        @relevance_regardless_of_file = {}.compare_by_identity
         @enabled_for_config = {}.compare_by_identity
         reset
         @ready = true
@@ -267,37 +268,42 @@ module RuboCop
         comment_config = processed_source.comment_config
 
         (cops + opted_in_standby_cops(processed_source)).select do |cop|
-          relevant_file_for_cop?(cop, file_path) &&
-            (enabled_for_config?(cop) || comment_config.cop_opted_in?(cop))
+          next false unless relevant_to_file?(cop, file_path)
+          next true if enabled_for_config?(cop)
+
+          comment_config.cop_opted_in?(cop)
         end
       end
 
-      # Cops are instantiated afresh for every file, so the answers that do not
-      # depend on the file are kept per cop class: a team has a single config.
-      def relevant_file_for_cop?(cop, file_path)
-        relevant = @path_independent_relevance.fetch(cop.class) do |cop_class|
-          @path_independent_relevance[cop_class] =
-            (cop.relevant_file?(file_path) if path_independent_relevance?(cop))
-        end
-        relevant.nil? ? !cop.excluded_file?(file_path) : relevant
+      # Cops are instantiated afresh for every file, but a team has a single
+      # config, so the answers that do not depend on the file are worked out
+      # once per cop class.
+      def relevant_to_file?(cop, file_path)
+        return !cop.excluded_file?(file_path) if relevance_depends_on_file?(cop)
+
+        once_per_cop_class(@relevance_regardless_of_file, cop) { cop.relevant_file?(file_path) }
       end
 
-      # Without `Include` or `Exclude`, `Base#relevant_file?` only checks the
-      # target's gem versions, which come from the config.
-      def path_independent_relevance?(cop)
-        cop_class = cop.class
-
-        cop_class.instance_method(:relevant_file?).owner == Base &&
-          cop_class.instance_method(:excluded_file?).owner == Base &&
-          !cop.config.clusivity_config_for_badge?(cop_class.badge)
+      # `Base#relevant_file?` matches the file against `Include` and `Exclude`
+      # when the cop has them. Otherwise it only checks the gem versions of the
+      # target, which come from the config.
+      def relevance_depends_on_file?(cop)
+        once_per_cop_class(@relevance_depends_on_file, cop) do |cop_class|
+          cop_class.instance_method(:relevant_file?).owner != Base ||
+            cop_class.instance_method(:excluded_file?).owner != Base ||
+            cop.config.clusivity_config_for_badge?(cop_class.badge)
+        end
       end
 
       def enabled_for_config?(cop)
-        @enabled_for_config.fetch(cop.class) do |cop_class|
-          @enabled_for_config[cop_class] = @registry.enabled?(cop, @config) &&
-                                           support_target_ruby_version?(cop) &&
-                                           support_target_rails_version?(cop)
+        once_per_cop_class(@enabled_for_config, cop) do
+          @registry.enabled?(cop, @config) &&
+            support_target_ruby_version?(cop) && support_target_rails_version?(cop)
         end
+      end
+
+      def once_per_cop_class(answers, cop)
+        answers.fetch(cop.class) { |cop_class| answers[cop_class] = yield(cop_class) }
       end
 
       # Cops that were not mobilized because they are disabled in the config,
