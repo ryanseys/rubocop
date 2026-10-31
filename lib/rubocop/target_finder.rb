@@ -76,10 +76,19 @@ module RuboCop
     private
 
     def to_inspect?(file, base_dir, base_dir_config)
+      return false unless possibly_inspected?(file, base_dir_config)
       return false if base_dir_config.file_to_exclude?(file)
       return true if !hidden_file_in_dir?(file, base_dir) && ruby_file?(file)
 
       base_dir_config.file_to_include?(file)
+    end
+
+    # Rules out most files that are not Ruby files before the costly pattern matching. It still
+    # asks `ruby_file?`, which plugins extend. Files without an extension pass, so that only
+    # the files that are not excluded are opened to look for a shebang line.
+    def possibly_inspected?(file, config)
+      File.extname(file).empty? || ruby_file?(file) ||
+        config.file_possibly_included?(File.expand_path(file))
     end
 
     def hidden_dir?(dir)

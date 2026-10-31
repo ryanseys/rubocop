@@ -281,7 +281,18 @@ module RuboCop
 
     def file_to_exclude?(file)
       file = File.expand_path(file)
-      patterns_to_exclude.any? { |pattern| match_path?(pattern, file) }
+      exclude_patterns_with_prefix.any? do |pattern, prefix|
+        file.start_with?(prefix) && match_path?(pattern, file)
+      end
+    end
+
+    # A cheap test of whether an `Include` pattern can match the file, by how the patterns end.
+    #
+    # @param file [String] an absolute path
+    # @api private
+    def file_possibly_included?(file)
+      suffixes = include_pattern_suffixes
+      suffixes.nil? || file.end_with?(*suffixes)
     end
 
     def patterns_to_include
@@ -374,6 +385,31 @@ module RuboCop
     end
 
     private
+
+    # Patterns starting with `..` are expanded before they are matched, so they get no prefix.
+    def exclude_patterns_with_prefix
+      @exclude_patterns_with_prefix ||= patterns_to_exclude.map do |pattern|
+        if pattern.is_a?(String) && !pattern.start_with?('..')
+          [pattern, literal_glob_prefix(pattern)]
+        else
+          [pattern, '']
+        end
+      end
+    end
+
+    # @return [Array<String>, nil] nil if a pattern can end with anything
+    def include_pattern_suffixes
+      return @include_pattern_suffixes if defined?(@include_pattern_suffixes)
+
+      suffixes = patterns_to_include.map do |pattern|
+        if pattern.is_a?(String) && !pattern.start_with?('..')
+          literal_glob_suffix(pattern)
+        else
+          ''
+        end
+      end
+      @include_pattern_suffixes = (suffixes.uniq unless suffixes.include?(''))
+    end
 
     def match_relative_or_absolute_path?(pattern, relative_file_path, absolute_file_path)
       should_use_absolute_path = absolute?(pattern.to_s) || pattern.to_s.start_with?('..') ||
