@@ -94,6 +94,8 @@ module RuboCop
         @standby_cops = {}
         @relevance_depends_on_file = {}.compare_by_identity
         @relevance_regardless_of_file = {}.compare_by_identity
+        @shared_patterns = {}.compare_by_identity
+        @distinct_patterns = {}
         @enabled_for_config = {}.compare_by_identity
         reset
         @ready = true
@@ -266,9 +268,10 @@ module RuboCop
       def roundup_relevant_cops(processed_source)
         file_path = processed_source.file_path
         comment_config = processed_source.comment_config
+        answers_by_patterns = {}.compare_by_identity
 
         (cops + opted_in_standby_cops(processed_source)).select do |cop|
-          next false unless relevant_to_file?(cop, file_path)
+          next false unless relevant_to_file?(cop, file_path, answers_by_patterns)
           next true if enabled_for_config?(cop)
 
           comment_config.cop_opted_in?(cop)
@@ -277,11 +280,17 @@ module RuboCop
 
       # Cops are instantiated afresh for every file, but a team has a single
       # config, so the answers that do not depend on the file are worked out
-      # once per cop class.
-      def relevant_to_file?(cop, file_path)
-        return !cop.excluded_file?(file_path) if relevance_depends_on_file?(cop)
+      # once per cop class. Cops with equal `Include` and `Exclude` patterns
+      # share the answer for a file.
+      def relevant_to_file?(cop, file_path, answers_by_patterns)
+        return relevant_regardless_of_file?(cop, file_path) unless relevance_depends_on_file?(cop)
 
-        once_per_cop_class(@relevance_regardless_of_file, cop) { cop.relevant_file?(file_path) }
+        patterns = shared_patterns(cop)
+        return !cop.excluded_file?(file_path) unless patterns
+
+        answers_by_patterns.fetch(patterns) do
+          answers_by_patterns[patterns] = cop.relevant_file?(file_path)
+        end
       end
 
       # `Base#relevant_file?` matches the file against `Include` and `Exclude`
@@ -289,9 +298,33 @@ module RuboCop
       # target, which come from the config.
       def relevance_depends_on_file?(cop)
         once_per_cop_class(@relevance_depends_on_file, cop) do |cop_class|
-          cop_class.instance_method(:relevant_file?).owner != Base ||
-            cop_class.instance_method(:excluded_file?).owner != Base ||
+          overrides_relevance?(cop_class) ||
             cop.config.clusivity_config_for_badge?(cop_class.badge)
+        end
+      end
+
+      def overrides_relevance?(cop_class)
+        cop_class.instance_method(:relevant_file?).owner != Base ||
+          cop_class.instance_method(:excluded_file?).owner != Base
+      end
+
+      def relevant_regardless_of_file?(cop, file_path)
+        once_per_cop_class(@relevance_regardless_of_file, cop) { cop.relevant_file?(file_path) }
+      end
+
+      # A cop that keeps `Base#relevant_file?` and has its gem requirements met
+      # is relevant to a file exactly when the file matches its patterns. One
+      # object stands for each distinct pair, so it is looked up by identity.
+      #
+      # @return [Array, nil] the `Include` and `Exclude` patterns of the cop, or
+      #   `nil` when the cop must be asked itself
+      def shared_patterns(cop)
+        once_per_cop_class(@shared_patterns, cop) do |cop_class|
+          next if overrides_relevance?(cop_class)
+          next unless cop.send(:target_satisfies_all_gem_version_requirements?)
+
+          patterns = cop.cop_config.values_at('Include', 'Exclude')
+          @distinct_patterns[patterns] ||= patterns
         end
       end
 

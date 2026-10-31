@@ -230,6 +230,69 @@ RSpec.describe RuboCop::Cop::Team do
       end
     end
 
+    context 'when cops have the same Include and Exclude patterns', :restore_registry do
+      let(:cop_classes) do
+        RuboCop::Cop::Registry.new(
+          [
+            needs_gem_cop_class,
+            RuboCop::Cop::Style::For,
+            RuboCop::Cop::Lint::ShadowedArgument,
+            own_relevance_cop_class,
+            RuboCop::Cop::Lint::UselessAssignment
+          ]
+        )
+      end
+      let(:needs_gem_cop_class) do
+        stub_cop_class('Test::NeedsGem') { requires_gem 'gem-not-in-target' }
+      end
+      let(:own_relevance_cop_class) do
+        stub_cop_class('Test::OwnRelevance') do
+          def relevant_file?(file)
+            super && File.basename(file) != 'skipped.rb'
+          end
+        end
+      end
+      let(:config) do
+        RuboCop::ConfigLoader.merge_with_default(
+          RuboCop::Config.new(
+            'Test/NeedsGem' => { 'Enabled' => true, 'Include' => %w[included.rb skipped.rb] },
+            'Style/For' => { 'Include' => %w[included.rb skipped.rb] },
+            'Test/OwnRelevance' => { 'Enabled' => true, 'Include' => %w[included.rb skipped.rb] },
+            'Lint/UselessAssignment' => { 'Exclude' => ['skipped.rb'] }
+          ), ''
+        )
+      end
+
+      def cop_names_for(path)
+        create_file(path, 'foo { |bar| puts bar }')
+        processed_source = RuboCop::ProcessedSource.from_file(
+          path, ruby_version, parser_engine: parser_engine
+        )
+        processed_source.config = config
+        processed_source.registry = cop_classes
+        team.investigate(processed_source).cops.map(&:name)
+      end
+
+      it 'runs the relevant cops in their order' do
+        expect(cop_names_for('included.rb')).to eq(
+          %w[Style/For Lint/ShadowedArgument Test/OwnRelevance Lint/UselessAssignment]
+        )
+        expect(cop_names_for('example.rb')).to eq(%w[Lint/ShadowedArgument Lint/UselessAssignment])
+      end
+
+      it 'asks a cop with its own `relevant_file?` for every file' do
+        expect(cop_names_for('skipped.rb')).to eq(%w[Style/For Lint/ShadowedArgument])
+        expect(cop_names_for('included.rb')).to include('Test/OwnRelevance')
+      end
+
+      it 'runs the others when a cop does not have its gem requirements met' do
+        cop_names = cop_names_for('included.rb')
+
+        expect(cop_names).not_to include('Test/NeedsGem')
+        expect(cop_names).to include('Style/For')
+      end
+    end
+
     context 'when a cop disabled in the config is opted back in by a comment directive' do
       let(:config) do
         RuboCop::ConfigLoader.merge_with_default(
