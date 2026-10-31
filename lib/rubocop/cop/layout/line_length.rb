@@ -89,20 +89,28 @@ module RuboCop
         end
 
         def on_block(node)
+          return unless @any_line_too_long
+
           check_for_breakable_block(node)
         end
         alias on_numblock on_block
         alias on_itblock on_block
 
         def on_str(node)
+          return unless @any_line_too_long
+
           check_for_breakable_str(node)
         end
 
         def on_dstr(node)
+          return unless @any_line_too_long
+
           check_for_breakable_dstr(node)
         end
 
         def on_potential_breakable_node(node)
+          return unless @any_line_too_long
+
           check_for_breakable_node(node)
         end
         alias on_array on_potential_breakable_node
@@ -111,6 +119,8 @@ module RuboCop
         alias on_csend on_potential_breakable_node
 
         def on_def(node)
+          return unless @any_line_too_long
+
           if node.endless?
             track_endless_method(node)
           else
@@ -127,12 +137,18 @@ module RuboCop
           @heredocs = nil
           @heredoc_openers = nil
 
+          # Only a line that is too long can get an offense, so the cop skips all
+          # of its work in a file without one.
+          @any_line_too_long = processed_source.lines.any? { |line| too_long?(line) }
+          return unless @any_line_too_long
           return unless processed_source.raw_source.include?(';')
 
           check_for_breakable_semicolons(processed_source)
         end
 
         def on_investigation_end
+          return unless @any_line_too_long
+
           processed_source.lines.each_with_index do |line, line_index|
             check_line(line, line_index)
           end
@@ -141,6 +157,10 @@ module RuboCop
         private
 
         attr_accessor :breakable_range
+
+        def too_long?(line)
+          line_length(line) > max
+        end
 
         def track_endless_method(node)
           line_index = node.first_line - processed_source.buffer.first_line
@@ -476,7 +496,7 @@ module RuboCop
 
         # rubocop:disable-next Metrics/AbcSize, Metrics/CyclomaticComplexity, Metrics/PerceivedComplexity
         def check_line(line, line_index)
-          return if line_length(line) <= max
+          return unless too_long?(line)
           return if allowed_line?(line, line_index)
 
           if endless_methods_by_line.key?(line_index)
