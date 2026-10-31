@@ -185,9 +185,16 @@ module RuboCop
         INDEXABLE_METHOD_NAME =
           /\A(?<owner>[A-Z]\w*(?:::[A-Z]\w*)*)(?<separator>[#.])(?<name>[^#.]+)\z/.freeze
         # No `RESTRICT_ON_SEND`: the delegating method names are configurable
-        # (`DelegatingMethods`), so `on_send` must see every call. The handler
-        # returns quickly for calls that are not method definitions, and
-        # benchmarks show no measurable cost over the previous fixed list.
+        # (`DelegatingMethods`), so `on_send` must see every call. It checks the
+        # method name first, because most calls are not method definitions.
+        METHOD_DEFINING_METHODS = %i[
+          alias_method attr attr_reader attr_writer attr_accessor
+          def_delegator def_instance_delegator def_delegators def_instance_delegators
+          silence_redefinition_of_method redefine_method
+        ].to_set.freeze
+        # A singleton class in a scope from `parent_module_name`, such as `Foo::#<Class:Foo>`.
+        SINGLETON_CLASS_SCOPE =
+          /(?:(?<name>.*)::)#<Class:\k<name>>|#<Class:(?<name>.*)>(?:::)?/.freeze
 
         def initialize(config = nil, options = nil)
           super
@@ -302,6 +309,8 @@ module RuboCop
         PATTERN
 
         def on_send(node) # rubocop:disable Metrics/AbcSize, Metrics/CyclomaticComplexity, Metrics/MethodLength, Metrics/PerceivedComplexity
+          return unless method_defining_call?(node)
+
           name, original_name = alias_method?(node)
 
           if name && original_name
@@ -363,6 +372,10 @@ module RuboCop
                       current: source_location(node))
         end
 
+        def method_defining_call?(node)
+          METHOD_DEFINING_METHODS.include?(node.method_name) || delegating_method?(node)
+        end
+
         # Recognizing a delegating call as a method definition is Active
         # Support behavior, so it stays gated on `ActiveSupportExtensionsEnabled`
         # as it was when only `delegate` was supported. `DelegatingMethods` lets
@@ -417,10 +430,7 @@ module RuboCop
         end
 
         def humanize_scope(scope)
-          scope = scope.sub(
-            /(?:(?<name>.*)::)#<Class:\k<name>>|#<Class:(?<name>.*)>(?:::)?/,
-            '\k<name>.'
-          )
+          scope = scope.sub(SINGLETON_CLASS_SCOPE, '\k<name>.') if scope.include?('#<Class:')
           scope.end_with?('.') ? scope : "#{scope}#"
         end
 
