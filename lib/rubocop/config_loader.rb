@@ -1,6 +1,5 @@
 # frozen_string_literal: true
 
-require 'erb'
 require 'yaml'
 require_relative 'cache_config'
 require_relative 'config_finder'
@@ -78,7 +77,7 @@ module RuboCop
 
       def load_yaml_configuration(absolute_path)
         file_contents = read_file(absolute_path)
-        yaml_code = Dir.chdir(File.dirname(absolute_path)) { ERB.new(file_contents).result }
+        yaml_code = render_erb(file_contents, absolute_path)
         yaml_tree = check_duplication(yaml_code, absolute_path)
         hash = yaml_tree_to_hash(yaml_tree) || {}
 
@@ -263,6 +262,13 @@ module RuboCop
         File.read(absolute_path, encoding: Encoding::UTF_8)
       rescue Errno::ENOENT
         raise ConfigNotFoundError, "Configuration file not found: #{absolute_path}"
+      end
+
+      def render_erb(file_contents, absolute_path)
+        return file_contents unless file_contents.include?('<%')
+
+        require 'erb'
+        Dir.chdir(File.dirname(absolute_path)) { ERB.new(file_contents).result }
       end
 
       def yaml_tree_to_hash(yaml_tree)
