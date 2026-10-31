@@ -6,8 +6,10 @@ module RuboCop
   # Converts RuboCop objects to and from the serialization format JSON.
   # @api private
   class CachedData
-    def initialize(filename)
+    # `source` is the content of the file the offenses were found in.
+    def initialize(filename, source)
       @filename = filename
+      @source = source
     end
 
     def from_json(text)
@@ -111,7 +113,7 @@ module RuboCop
     # because of unknown encoding comments.
     def source_buffer
       @source_buffer ||= begin
-        source = File.read(@filename, encoding: Encoding::UTF_8)
+        source = String.new(@source, encoding: Encoding::UTF_8)
         Parser::Source::Buffer.new(@filename, source: source)
       end
     end

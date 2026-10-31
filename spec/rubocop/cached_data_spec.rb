@@ -1,9 +1,7 @@
 # frozen_string_literal: true
 
 RSpec.describe RuboCop::CachedData, :isolated_environment do
-  include FileHelper
-
-  subject(:cached_data) { described_class.new(filename) }
+  subject(:cached_data) { described_class.new(filename, source) }
 
   let(:filename) { File.expand_path('example.rb') }
   let(:source) { %(x = "hello"\n) }
@@ -12,10 +10,15 @@ RSpec.describe RuboCop::CachedData, :isolated_environment do
   end
   let(:location) { Parser::Source::Range.new(buffer, 4, 11) }
 
-  before { create_file(filename, source) }
-
   def round_trip(offense)
     cached_data.from_json(cached_data.to_json([offense])).first
+  end
+
+  # The file is not read: its source on disk can be different from the one that was inspected.
+  it 'restores the location of an offense in the source it was given' do
+    offense = RuboCop::Cop::Offense.new(:convention, location, 'message', 'CopName')
+
+    expect(round_trip(offense).location.source).to eq('"hello"')
   end
 
   it 'restores an offense that has no correction' do

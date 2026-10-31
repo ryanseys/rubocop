@@ -320,7 +320,7 @@ module RuboCop
       ResultCache.new(file, team, @options, @config_store)
     end
 
-    def file_offense_cache(file)
+    def file_offense_cache(file, &block)
       config = @config_store.for_file(file)
       cache = cached_result(file, standby_team(config)) if cached_run?
 
@@ -335,11 +335,20 @@ module RuboCop
       end
 
       if real_run_needed
-        offenses = yield
+        offenses = reusing_source_of(cache, &block)
         save_in_cache(cache, offenses) unless Cop::Registry.global.warnings?(file)
       end
 
       offenses
+    end
+
+    # The cache read the file to compute its key. The first parse of the file uses that source, so
+    # the file is read only once, and the offenses saved under the key are found in that source.
+    def reusing_source_of(cache)
+      @source_read_for_cache = cache&.source
+      yield
+    ensure
+      @source_read_for_cache = nil
     end
 
     def add_redundant_disables(file, offenses, source)
@@ -744,17 +753,23 @@ module RuboCop
                              prism_result: prism_result
                            )
                          else
-                           begin
-                             ProcessedSource.from_file(
-                               file, ruby_version, parser_engine: parser_engine
-                             )
-                           rescue Errno::ENOENT
-                             raise RuboCop::Error, "No such file or directory: #{file}"
-                           end
+                           processed_source_from_file(file, ruby_version, parser_engine)
                          end
       processed_source.config = config
       processed_source.registry = mobilized_cop_classes(config)
       processed_source
+    end
+
+    # Only the first parse takes the source that was read for the cache. A later parse reads the
+    # file again, as autocorrection can have written to it.
+    def processed_source_from_file(file, ruby_version, parser_engine)
+      source = @source_read_for_cache
+      @source_read_for_cache = nil
+      return ProcessedSource.new(source, ruby_version, file, parser_engine: parser_engine) if source
+
+      ProcessedSource.from_file(file, ruby_version, parser_engine: parser_engine)
+    rescue Errno::ENOENT
+      raise RuboCop::Error, "No such file or directory: #{file}"
     end
 
     # A Cop::Team instance is stateful and may change when inspecting.

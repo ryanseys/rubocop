@@ -105,6 +105,10 @@ module RuboCop
 
     attr_reader :path
 
+    # The source of the file, as it was read for the checksum. It is nil if the file could not be
+    # read.
+    attr_reader :source
+
     def initialize(file, team, options, config_store, cache_root_override = nil)
       cache_root_override ||= options[:cache_root] if options[:cache_root]
       rubocop_cache_dir = ResultCache.cache_root(config_store, cache_root_override)
@@ -114,7 +118,7 @@ module RuboCop
                         self.class.source_checksum,
                         context_checksum(team, options),
                         file_checksum(file, config_store))
-      @cached_data = CachedData.new(file)
+      @cached_data = CachedData.new(file, @source)
       @debug = options[:debug]
     end
 
@@ -188,9 +192,11 @@ module RuboCop
       stat = File.stat(file)
       return unavailable_checksum unless stat.file?
 
+      # The source is kept, so that the inspection does not have to read the file again.
+      @source = File.binread(file).freeze
       digester = Digest::SHA1.new
       digester.update("#{file}#{stat.mode}#{config_store.for_file(file).signature}")
-      digester.file(file)
+      digester.update(@source)
       digester.hexdigest
     rescue Errno::ENOENT
       # Spurious files that come and go should not cause a crash, at least not here.

@@ -3072,7 +3072,8 @@ RSpec.describe 'RuboCop::CLI --autocorrect', :isolated_environment do # rubocop:
 
   describe 'caching' do
     let(:cache) do
-      instance_double(RuboCop::ResultCache, 'valid?' => true, 'load' => cached_offenses)
+      instance_double(RuboCop::ResultCache,
+                      'valid?' => true, 'load' => cached_offenses, 'source' => nil)
     end
     let(:source) { %(puts "Hi"\n) }
 

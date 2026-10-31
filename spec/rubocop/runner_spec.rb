@@ -197,6 +197,20 @@ RSpec.describe RuboCop::Runner, :isolated_environment do
           1 file inspected, 1 offense detected
         RESULT
       end
+
+      context 'when the file changes after its cache key is computed' do
+        before do
+          allow(RuboCop::ResultCache).to receive(:new).and_wrap_original do |method, *args|
+            method.call(*args).tap { create_file('example.rb', "# frozen_string_literal: true\n") }
+          end
+        end
+
+        it 'inspects the source that the key was computed from' do
+          expect(RuboCop::ProcessedSource).not_to receive(:from_file)
+
+          expect(runner.run([])).to be false
+        end
+      end
     end
 
     context 'custom ruby extractors' do
@@ -440,7 +454,7 @@ RSpec.describe RuboCop::Runner, :isolated_environment do
       before do
         # The cache responds that it's not valid, which means that new results
         # should normally be collected and saved.
-        cache = instance_double(RuboCop::ResultCache, 'valid?' => false)
+        cache = instance_double(RuboCop::ResultCache, 'valid?' => false, 'source' => nil)
 
         allow(RuboCop::ResultCache).to receive(:new) { cache }
       end
@@ -451,7 +465,9 @@ RSpec.describe RuboCop::Runner, :isolated_environment do
         include_context 'mock console output'
 
         let(:source) { "# frozen_string_literal: true\n\nputs 'crash'\n" }
-        let(:later_file_cache) { instance_double(RuboCop::ResultCache, 'valid?' => false) }
+        let(:later_file_cache) do
+          instance_double(RuboCop::ResultCache, 'valid?' => false, 'source' => nil)
+        end
 
         before do
           create_file('later.rb', "# frozen_string_literal: true\n\nputs 1\n")
@@ -459,7 +475,8 @@ RSpec.describe RuboCop::Runner, :isolated_environment do
 
           # The crashing file's double doesn't define #save, so we'd get an
           # error if it were called.
-          crashing_file_cache = instance_double(RuboCop::ResultCache, 'valid?' => false)
+          crashing_file_cache = instance_double(RuboCop::ResultCache,
+                                                'valid?' => false, 'source' => nil)
           allow(RuboCop::ResultCache).to receive(:new) do |file|
             file.end_with?('later.rb') ? later_file_cache : crashing_file_cache
           end

@@ -322,6 +322,21 @@ RSpec.describe RuboCop::ResultCache, :isolated_environment do
 
         expect(loaded_encoding).to eql(Encoding::UTF_8)
       end
+
+      it 'comes from the source that was read for the checksum' do
+        cache.save(offenses)
+        cache2 = described_class.new(file, team, options, config_store, cache_root)
+        create_file(file, ['x = 2'])
+
+        expect(cache2.load.first.location.source).to eq('# ')
+      end
+    end
+  end
+
+  describe '#source' do
+    it 'is the source of the file, as it was read for the checksum' do
+      expect(cache.source).to eq(File.binread(file))
+      expect(cache.source).to be_frozen
     end
   end
 
@@ -336,6 +351,12 @@ RSpec.describe RuboCop::ResultCache, :isolated_environment do
 
       expect(missing_cache).not_to be_valid
       expect(other_missing_cache).not_to be_valid
+    end
+
+    it 'has no source' do
+      missing_cache = described_class.new('nonexistent.rb', team, options, config_store, cache_root)
+
+      expect(missing_cache.source).to be_nil
     end
   end
 
