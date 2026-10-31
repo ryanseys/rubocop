@@ -192,6 +192,26 @@ RSpec.describe RuboCop::CommentConfig do
     it 'collects line ranges by disabled cops' do
       expect(range).to eq({ 'Metrics/MethodLength' => [1..5], 'Security/Eval' => [8..8] })
     end
+
+    context 'when a cop is disabled in the config' do
+      let(:config) { RuboCop::Config.new('Style/For' => { 'Enabled' => false }) }
+      let(:config_disabled_range) do
+        described_class::CONFIG_DISABLED_LINE_RANGE_MIN..Float::INFINITY
+      end
+
+      it 'disables the cop for the whole file' do
+        expect(range['Style/For']).to eq([config_disabled_range])
+        expect(range['Style/For'].first.directive.comment.text).to eq('# rubocop:disable Style/For')
+      end
+
+      it 'disables the cop for the whole of each file that has a directive' do
+        other_source = parse_source("# rubocop:disable Style/Not\nnot foo\n")
+
+        expect(range['Style/For']).to eq([config_disabled_range])
+        expect(described_class.new(other_source).cop_disabled_line_ranges['Style/For'])
+          .to eq([config_disabled_range])
+      end
+    end
   end
 
   describe 'disable-next directives' do
@@ -715,6 +735,13 @@ RSpec.describe RuboCop::CommentConfig do
         it 'returns false' do
           expect(comment_config).not_to be_comment_only_line(line_number)
         end
+      end
+    end
+
+    context 'when line is the one given to the directives of cops disabled in the config' do
+      it 'returns true' do
+        expect(comment_config)
+          .to be_comment_only_line(described_class::CONFIG_DISABLED_LINE_RANGE_MIN)
       end
     end
   end

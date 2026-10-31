@@ -20,6 +20,15 @@ module RuboCop
       Loc = Struct.new(:expression)
       Expression = Struct.new(:line)
 
+      @directives = {}
+
+      # The directive does not depend on the file, so it is built once for each
+      # cop and shared by every file.
+      # @api private
+      def self.directive_for(cop_name)
+        @directives[cop_name] ||= DirectiveComment.new(new(cop_name))
+      end
+
       def initialize(cop_name)
         @text = "# rubocop:disable #{cop_name}"
         @line_number = CONFIG_DISABLED_LINE_RANGE_MIN
@@ -73,7 +82,7 @@ module RuboCop
     end
 
     def comment_only_line?(line_number)
-      non_comment_token_line_numbers.none?(line_number)
+      !non_comment_token_line_numbers.include?(line_number)
     end
 
     # The names of the cops that are opted in by an `enable` comment directive
@@ -160,10 +169,8 @@ module RuboCop
 
     def inject_disabled_cops_directives(analyses)
       registry.disabled_names(config).each do |cop_name|
-        analyses[cop_name] = analyze_cop(
-          analyses[cop_name],
-          DirectiveComment.new(ConfigDisabledCopDirectiveComment.new(cop_name))
-        )
+        directive = ConfigDisabledCopDirectiveComment.directive_for(cop_name)
+        analyses[cop_name] = analyze_cop(analyses[cop_name], directive)
       end
     end
 
@@ -236,7 +243,7 @@ module RuboCop
     def non_comment_token_line_numbers
       @non_comment_token_line_numbers ||= begin
         non_comment_tokens = processed_source.tokens.reject(&:comment?)
-        non_comment_tokens.map(&:line).uniq
+        non_comment_tokens.to_set(&:line)
       end
     end
 
