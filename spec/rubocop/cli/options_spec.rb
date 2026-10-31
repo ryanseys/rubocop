@@ -334,6 +334,14 @@ RSpec.describe 'RuboCop::CLI options', :isolated_environment do # rubocop:disabl
       expect(cli.run(['--version'])).to eq(0)
       expect($stdout.string).to eq("#{RuboCop::Version::STRING}\n" * 2)
     end
+
+    it 'does not load the configuration' do
+      create_file('.rubocop.yml', ['inherit_from: missing.yml'])
+
+      expect(cli.run(['--version'])).to eq(0)
+      expect($stdout.string).to eq("#{RuboCop::Version::STRING}\n")
+      expect($stderr.string).to eq('')
+    end
   end
 
   describe '-V' do

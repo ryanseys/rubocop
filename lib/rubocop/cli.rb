@@ -165,11 +165,12 @@ module RuboCop
       set_options_to_pending_cops_reporter
       handle_editor_mode
 
+      # Loading the configuration takes a while, and `--version` does not need it.
+      handle_exiting_options if @options[:version]
+
       @config_store.apply_options!(@options)
       # Set cache root after apply_options! to ensure force_default_config is applied first.
-      early_cache_root = ConfigLoader.cache_root(@options[:cache_root])
-      ConfigLoader.cache_root = ResultCache.cache_root(@config_store, @options[:cache_root])
-      warn_if_cache_root_changed(early_cache_root, ConfigLoader.cache_root)
+      apply_cache_root
 
       handle_exiting_options
 
@@ -215,6 +216,12 @@ module RuboCop
         run_command(name) if @options[name]
       end
       raise Finished
+    end
+
+    def apply_cache_root
+      early_cache_root = ConfigLoader.cache_root(@options[:cache_root])
+      ConfigLoader.cache_root = ResultCache.cache_root(@config_store, @options[:cache_root])
+      warn_if_cache_root_changed(early_cache_root, ConfigLoader.cache_root)
     end
 
     def apply_default_formatter

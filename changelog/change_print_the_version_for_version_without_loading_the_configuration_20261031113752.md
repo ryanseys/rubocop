@@ -1,0 +1,1 @@
+* [ryanseys/rubocop#22](https://github.com/ryanseys/rubocop/pull/22): Make `--version` print the version without loading the configuration, so it is faster and no longer reports configuration warnings or errors. ([@ryanseys][])
