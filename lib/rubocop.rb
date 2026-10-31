@@ -9,7 +9,6 @@ require 'fileutils'
 before_us = $LOADED_FEATURES.dup
 require 'rainbow'
 
-require 'regexp_parser'
 require 'set'
 require 'stringio'
 require 'unicode/display_width'
@@ -20,9 +19,9 @@ require 'rubocop-ast'
 
 require_relative 'rubocop/ast_aliases'
 require_relative 'rubocop/ext/comment'
+require_relative 'rubocop/ext/lazy_regexp_parser'
 require_relative 'rubocop/ext/range'
 require_relative 'rubocop/ext/regexp_node'
-require_relative 'rubocop/ext/regexp_parser'
 
 require_relative 'rubocop/core_ext/string'
 require_relative 'rubocop/ext/processed_source'

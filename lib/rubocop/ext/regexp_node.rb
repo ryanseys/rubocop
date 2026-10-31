@@ -18,6 +18,9 @@ module RuboCop
       def assign_properties(*)
         super
 
+        # `regexp_parser` is only loaded once a regexp needs parsing. See `LazyRegexpParser`.
+        require_relative 'regexp_parser'
+
         str = with_interpolations_blanked
         @parsed_tree = begin
           Regexp::Parser.parse(str, options: options)

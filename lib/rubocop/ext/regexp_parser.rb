@@ -1,5 +1,7 @@
 # frozen_string_literal: true
 
+require 'regexp_parser'
+
 module RuboCop
   module Ext
     # Extensions for `regexp_parser` gem
