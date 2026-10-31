@@ -515,19 +515,42 @@ RSpec.describe RuboCop::TargetFinder, :isolated_environment do
       expect(found_basenames).to include('ruby4.rb')
     end
 
-    it 'works if patterns are empty' do
-      allow(Dir).to receive(:glob).and_call_original
-      allow_any_instance_of(described_class).to receive(:wanted_dir_patterns).and_return([])
+    it 'lists the files in a directory before those in its subdirectories, in name order' do
+      create_empty_file('dir1/sub/ruby5.rb')
+      create_empty_file('dir1.rb')
 
-      expect(Dir).to receive(:glob).with([File.join(base_dir, '**/*')], flags)
-      expect(found_basenames).to include(
-        'executable',
-        'file.txt',
-        'file',
-        'ruby1.rb',
-        'ruby2.rb',
-        'ruby3.rb'
+      expect(found_files.map { |file| file.delete_prefix("#{base_dir}/") }).to eq(
+        %w[dir1.rb dir1/executable dir1/file dir1/file.txt dir1/ruby1.rb dir1/ruby2.rb
+           dir1/sub/ruby5.rb dir2/ruby3.rb]
       )
+    end
+
+    it 'leaves out hidden files and directories' do
+      create_empty_file('.hidden.rb')
+
+      expect(found_basenames).not_to include('.hidden.rb', 'ruby4.rb')
+    end
+
+    context 'with File::FNM_DOTMATCH' do
+      let(:flags) { File::FNM_DOTMATCH }
+
+      it 'includes hidden files and directories' do
+        create_empty_file('.hidden.rb')
+
+        expect(found_basenames).to include('.hidden.rb', 'ruby4.rb')
+      end
+    end
+
+    it 'skips a broken symlink' do
+      create_link('broken.rb', 'missing.rb')
+
+      expect(found_basenames).not_to include('broken.rb')
+    end
+
+    it 'includes a symlink to a file' do
+      create_link('linked.rb', File.expand_path('dir2/ruby3.rb'))
+
+      expect(found_basenames).to include('linked.rb')
     end
 
     # Cannot create a directory with containing `*` character on Windows.
@@ -574,6 +597,47 @@ RSpec.describe RuboCop::TargetFinder, :isolated_environment do
 
       expect(found_basenames).not_to include('ruby5.rb')
       expect(found_basenames).to include('ruby3.rb')
+    end
+
+    context 'when the base directory has glob characters' do
+      let(:base_dir) { File.expand_path('[...something]') }
+
+      it 'follows a symlinked directory in it' do
+        create_empty_file('[...something]/real/ruby5.rb')
+        create_link('[...something]/link', File.expand_path('[...something]/real'))
+
+        expect(found_files).to include(File.join(base_dir, 'link/ruby5.rb'))
+      end
+    end
+
+    unless RuboCop::Platform.windows? || Process.uid.zero?
+      context 'with a directory that cannot be read' do
+        before do
+          create_empty_file('unreadable/ruby5.rb')
+          File.chmod(0o000, 'unreadable')
+        end
+
+        after { File.chmod(0o755, 'unreadable') }
+
+        it 'skips it' do
+          expect(found_basenames).not_to include('ruby5.rb')
+          expect(found_basenames).to include('ruby3.rb')
+        end
+      end
+
+      context 'with a directory that can be listed but not searched' do
+        before do
+          create_empty_file('unsearchable/sub/ruby5.rb')
+          File.chmod(0o644, 'unsearchable')
+        end
+
+        after { File.chmod(0o755, 'unsearchable') }
+
+        it 'skips what is in it' do
+          expect(found_basenames).not_to include('ruby5.rb')
+          expect(found_basenames).to include('ruby3.rb')
+        end
+      end
     end
   end
 

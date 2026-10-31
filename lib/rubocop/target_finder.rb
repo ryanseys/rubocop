@@ -61,16 +61,11 @@ module RuboCop
     # optimization find_files removes the top level directories that are excluded in configuration
     # in the normal way (dir/**/*).
     def find_files(base_dir, flags)
-      # get all wanted directories first to improve speed of finding all files
       exclude_pattern = combined_exclude_glob_patterns(base_dir)
       dir_flags = flags | File::FNM_PATHNAME | File::FNM_EXTGLOB
-      patterns = wanted_dir_patterns(base_dir, exclude_pattern, dir_flags)
-      patterns.map! { |dir| File.join(dir, '*') }
-      # We need this special case to avoid creating the pattern
-      # /**/* which searches the entire file system.
-      patterns = [File.join(base_dir, '**/*')] if patterns.empty?
-
-      Dir.glob(patterns, flags).select { |path| FileTest.file?(path) }
+      files = []
+      add_files_in_tree(files, base_dir, exclude_pattern, dir_flags)
+      files
     end
 
     private
@@ -93,28 +88,63 @@ module RuboCop
       relative.start_with?('.') || relative.include?(HIDDEN_PATH_SUBSTRING)
     end
 
-    def wanted_dir_patterns(base_dir, exclude_pattern, flags)
-      # Escape glob characters in base_dir to avoid unwanted behavior.
-      base_dir = base_dir.gsub(/[\\{}\[\]*?]/) do |reserved_glob_character|
-        "\\#{reserved_glob_character}"
+    # Reads each directory only once. The files in a directory come first, sorted by name, then the
+    # files in each wanted subdirectory, in name order.
+    def add_files_in_tree(files, dir, exclude_pattern, flags)
+      subdirs = []
+      each_entry(dir, flags) do |path, stat, symlink|
+        if stat.file?
+          files << path
+        elsif stat.directory? && wanted_dir?(dir, path, symlink, exclude_pattern, flags)
+          subdirs << path
+        end
       end
-
-      dirs = Dir.glob(File.join(base_dir, '*/'), flags)
-                .reject do |dir|
-                  next true if dir.end_with?('/./', '/../')
-                  next true if File.fnmatch?(exclude_pattern, dir, flags)
-
-                  symlink_excluded_or_infinite_loop?(base_dir, dir, exclude_pattern, flags)
-                end
-      dirs.flat_map { |dir| wanted_dir_patterns(dir, exclude_pattern, flags) }.unshift(base_dir)
+      subdirs.each { |subdir| add_files_in_tree(files, subdir, exclude_pattern, flags) }
     end
 
-    def symlink_excluded_or_infinite_loop?(base_dir, current_dir, exclude_pattern, flags)
-      dir_realpath = File.realpath(current_dir)
-      File.symlink?(current_dir.chomp('/')) && (
-        File.fnmatch?(exclude_pattern, "#{dir_realpath}/", flags) ||
-        File.realpath(base_dir).start_with?(dir_realpath)
-      )
+    # Yields each entry in `dir` in name order, with its stat and whether it is a symlink.
+    def each_entry(dir, flags)
+      entry_paths(dir, flags).each do |path|
+        stat, symlink = entry_stat(path)
+        yield path, stat, symlink if stat
+      end
+    end
+
+    # The paths come in the encoding that `Dir.glob(File.join(dir, '*'))` gives them. Like
+    # `Dir.glob`, this ignores a directory it cannot read, and it leaves out hidden entries unless
+    # `File::FNM_DOTMATCH` is given.
+    def entry_paths(dir, flags)
+      prefix = File.join(dir, '')
+      names = Dir.children(dir, encoding: prefix.encoding)
+      names.reject! { |name| name.start_with?('.') } unless flags.anybits?(File::FNM_DOTMATCH)
+      names.sort!.map! { |name| "#{prefix}#{name}" }
+    rescue Errno::ENOENT, Errno::ENOTDIR, Errno::EACCES
+      []
+    end
+
+    # Returns the stat of the entry, which follows a symlink, and whether the entry is a symlink.
+    # Like `FileTest.file?`, it returns nothing for an entry that it cannot stat, such as a broken
+    # symlink.
+    def entry_stat(path)
+      stat = File.lstat(path)
+      return [stat, false] unless stat.symlink?
+
+      [File.stat(path), true]
+    rescue SystemCallError
+      nil
+    end
+
+    def wanted_dir?(parent_dir, dir, symlink, exclude_pattern, flags)
+      return false if File.fnmatch?(exclude_pattern, "#{dir}/", flags)
+      return true unless symlink
+
+      !symlink_excluded_or_infinite_loop?(parent_dir, dir, exclude_pattern, flags)
+    end
+
+    def symlink_excluded_or_infinite_loop?(parent_dir, symlink, exclude_pattern, flags)
+      dir_realpath = File.realpath(symlink)
+      File.fnmatch?(exclude_pattern, "#{dir_realpath}/", flags) ||
+        File.realpath(parent_dir).start_with?(dir_realpath)
     end
 
     def combined_exclude_glob_patterns(base_dir)
