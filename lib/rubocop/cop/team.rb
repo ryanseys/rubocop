@@ -198,6 +198,8 @@ module RuboCop
 
       # @return [Commissioner::InvestigationReport]
       def investigate_partial(cops, processed_source, offset:, original:)
+        return Commissioner::InvestigationReport.new(processed_source, [], []) if cops.empty?
+
         commissioner = Commissioner.new(cops, self.class.forces_for(cops), @options)
         commissioner.investigate(processed_source, offset: offset, original: original)
       end
@@ -255,6 +257,8 @@ module RuboCop
       # under `--disable-uncorrectable`, so it must run with the correcting
       # cops - correctors of the later `other_cops` round are never applied.
       def partition_by_correcting(cops)
+        return [[], cops] unless autocorrect?
+
         cops.partition do |cop|
           cop.autocorrect? || cop.skipped_unsafe_correction_with_disable_uncorrectable?
         end

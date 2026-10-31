@@ -228,6 +228,14 @@ RSpec.describe RuboCop::Cop::Team do
       end
     end
 
+    context 'when autocorrection is not requested' do
+      it 'investigates all the cops with one commissioner' do
+        expect(RuboCop::Cop::Commissioner).to receive(:new).once.and_call_original
+
+        team.investigate(source)
+      end
+    end
+
     context 'when autocorrection is enabled' do
       let(:options) { { autocorrect: true } }
 
