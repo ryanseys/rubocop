@@ -13,6 +13,9 @@ module RuboCop
                       fix_layout autocorrect safe_autocorrect autocorrect_all
                       cache fail_fast stdin parallel].freeze
 
+    # The size of the entry of a file without offenses, `[]`.
+    EMPTY_ENTRY_SIZE = 2
+
     DL_EXTENSIONS = ::RbConfig::CONFIG
                     .values_at('DLEXT', 'DLEXT2')
                     .reject { |ext| !ext || ext.empty? }
@@ -123,11 +126,13 @@ module RuboCop
     end
 
     def valid?
-      !@checksum_unavailable && File.exist?(@path)
+      !@checksum_unavailable && !File.size?(@path).nil?
     end
 
     def load
       puts "Loading cache from #{@path}" if debug?
+      return [] if File.size(@path) == EMPTY_ENTRY_SIZE
+
       @cached_data.from_json(File.read(@path, encoding: Encoding::UTF_8))
     end
 

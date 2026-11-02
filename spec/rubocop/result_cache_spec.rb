@@ -49,6 +49,26 @@ RSpec.describe RuboCop::ResultCache, :isolated_environment do
       end
     end
 
+    context 'when no offenses are saved' do
+      it 'loads an empty list without reading the entry' do
+        cache.save([])
+        cache2 = described_class.new(file, team, options, config_store, cache_root)
+        expect(cache2).to be_valid
+        allow(File).to receive(:read).and_call_original
+        expect(File).not_to receive(:read).with(cache2.path, anything)
+        expect(cache2.load).to eq([])
+      end
+    end
+
+    context 'when the entry is empty' do
+      it 'is not valid' do
+        cache.save([])
+        File.write(cache.path, '')
+
+        expect(described_class.new(file, team, options, config_store, cache_root)).not_to be_valid
+      end
+    end
+
     # Fixes https://github.com/rubocop/rubocop/issues/6274
     context 'when offenses are saved' do
       context 'an offense with status corrected' do
