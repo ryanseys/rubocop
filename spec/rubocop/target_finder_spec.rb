@@ -595,6 +595,26 @@ RSpec.describe RuboCop::TargetFinder, :isolated_environment do
       expect(found_basenames).not_to include('file')
     end
 
+    context 'when an extension recognizes more files as Ruby files' do
+      subject(:target_finder) do
+        Class.new(described_class) do
+          private
+
+          def ruby_file?(file)
+            super || file.end_with?('.txt')
+          end
+        end.new(config_store, options)
+      end
+
+      it 'picks those files' do
+        expect(found_basenames).to include('file.txt')
+      end
+    end
+
+    it 'does not pick files that no `Include` pattern can match' do
+      expect(found_basenames).not_to include('file.txt')
+    end
+
     it 'does not pick directories' do
       found_basenames = found_files.map { |f| File.basename(f) }
       allow(config_store).to receive(:for).and_return({})
@@ -609,7 +629,8 @@ RSpec.describe RuboCop::TargetFinder, :isolated_environment do
       allow(config).to receive_messages(
         for_all_cops: { 'Exclude' => [], 'Include' => [], 'RubyInterpreters' => [] },
         :[] => [],
-        file_to_exclude?: false
+        file_to_exclude?: false,
+        file_possibly_included?: true
       )
 
       allow(config_store).to receive(:for).and_return(config)

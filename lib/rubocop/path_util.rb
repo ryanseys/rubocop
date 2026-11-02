@@ -100,6 +100,22 @@ module RuboCop
       path.match?(/[*{\[?]/)
     end
 
+    GLOB_SPECIAL_CHARACTER = /[*?\[\]{}\\]/.freeze
+    private_constant :GLOB_SPECIAL_CHARACTER
+
+    # The text before the first special character, which every match starts with.
+    def literal_glob_prefix(pattern)
+      pattern[0, pattern.index(GLOB_SPECIAL_CHARACTER) || pattern.length]
+    end
+
+    # The text after the last special character, which every match ends with.
+    # A leading separator is dropped, since `**/` can match no directory at all.
+    def literal_glob_suffix(pattern)
+      index = pattern.rindex(GLOB_SPECIAL_CHARACTER)
+      suffix = index ? pattern[(index + 1)..] : pattern
+      suffix.delete_prefix(File::SEPARATOR)
+    end
+
     def hidden_file_in_not_hidden_dir?(pattern, path)
       hidden_file?(path) &&
         File.fnmatch?(

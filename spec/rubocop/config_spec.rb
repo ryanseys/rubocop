@@ -608,6 +608,46 @@ RSpec.describe RuboCop::Config do
     end
   end
 
+  describe '#file_possibly_included?' do
+    let(:hash) { { 'AllCops' => { 'Include' => ['**/*.rb', '**/Gemfile'] } } }
+
+    let(:loaded_path) { '/home/foo/project/.rubocop.yml' }
+
+    it 'returns true for a file that ends like one of the patterns' do
+      expect(configuration).to be_file_possibly_included('/home/foo/project/lib/foo.rb')
+      expect(configuration).to be_file_possibly_included('/home/foo/project/Gemfile')
+    end
+
+    it 'returns false for a file that ends like none of the patterns' do
+      expect(configuration).not_to be_file_possibly_included('/home/foo/project/app/index.js')
+      expect(configuration).not_to be_file_possibly_included('/home/foo/project/Gemfile.lock')
+    end
+
+    context 'when a pattern can end with anything' do
+      let(:hash) { { 'AllCops' => { 'Include' => ['**/*.rb', 'lib/**/*'] } } }
+
+      it 'returns true for any file' do
+        expect(configuration).to be_file_possibly_included('/home/foo/project/app/index.js')
+      end
+    end
+
+    context 'when a pattern is a regexp' do
+      let(:hash) { { 'AllCops' => { 'Include' => ['**/*.rb', /\.js\z/] } } }
+
+      it 'returns true for any file' do
+        expect(configuration).to be_file_possibly_included('/home/foo/project/app/index.css')
+      end
+    end
+
+    context 'when a pattern starts with `..`' do
+      let(:hash) { { 'AllCops' => { 'Include' => ['**/*.rb', '../shared/tasks.myext'] } } }
+
+      it 'returns true for any file' do
+        expect(configuration).to be_file_possibly_included('/home/foo/shared/tasks.myext')
+      end
+    end
+  end
+
   describe '#file_to_exclude?' do
     include_context 'mock console output'
 

@@ -106,6 +106,59 @@ RSpec.describe RuboCop::PathUtil do
     end
   end
 
+  describe '#literal_glob_prefix' do
+    it 'returns the text before the first special character' do
+      expect(described_class.literal_glob_prefix('/project/vendor/**/*')).to eq('/project/vendor/')
+      expect(described_class.literal_glob_prefix('/project/{app,lib}/*.rb')).to eq('/project/')
+      expect(described_class.literal_glob_prefix('**/*.rb')).to eq('')
+    end
+
+    it 'returns the whole pattern when it has no special character' do
+      expect(described_class.literal_glob_prefix('/project/Gemfile')).to eq('/project/Gemfile')
+    end
+  end
+
+  describe '#literal_glob_suffix' do
+    it 'returns the text after the last special character' do
+      expect(described_class.literal_glob_suffix('**/*.rb')).to eq('.rb')
+      expect(described_class.literal_glob_suffix('**/*Fastfile')).to eq('Fastfile')
+      expect(described_class.literal_glob_suffix('lib/[ab]x.rb')).to eq('x.rb')
+      expect(described_class.literal_glob_suffix('**/*.{rb,rake}')).to eq('')
+    end
+
+    it 'drops a leading separator, which `**/` can match without' do
+      expect(described_class.literal_glob_suffix('**/Gemfile')).to eq('Gemfile')
+      expect(described_class.literal_glob_suffix('**/config/routes.rb')).to eq('config/routes.rb')
+    end
+  end
+
+  describe 'literal affixes of a pattern' do
+    let(:patterns) do
+      %w[
+        **/*.rb **/Gemfile **/.pryrc **/*Fastfile **/*.{rb,rake} **/[Rr]akefile lib/**/*.rb
+        /project/vendor/**/* /project/Gemfile /project/config/*.rb /project/{app,lib}/**
+        /project/a?c /project/**/spec/**/*_spec.rb /project/*
+      ]
+    end
+    let(:paths) do
+      %w[
+        Gemfile lib/Gemfile .pryrc lib/.pryrc Fastfile lib/MyFastfile foo.rb lib/foo.rb lib/a/b.rb
+        lib/.hidden.rb .hidden/foo.rb Rakefile rakefile x.rake /project/Gemfile /project/vendor/a.rb
+        /project/vendor/.a/b.rb /project/config/x.rb /project/app/x.rb /project/abc
+        /project/spec/a_spec.rb /project/a/spec/b/c_spec.rb /project/.rubocop.yml /other/Gemfile
+      ]
+    end
+
+    it 'are kept by every path that `#match_path?` matches with the pattern' do
+      patterns.product(paths).each do |pattern, path|
+        next unless described_class.match_path?(pattern, path)
+
+        expect(path).to start_with(described_class.literal_glob_prefix(pattern))
+        expect(path).to end_with(described_class.literal_glob_suffix(pattern))
+      end
+    end
+  end
+
   describe '.remote_file?' do
     subject(:smart_path) { described_class.remote_file?(path) }
 
