@@ -91,7 +91,7 @@ module RuboCop
     end
 
     def deprecated_cop_name?(name)
-      legacy_cop_names.include?(name)
+      (@deprecated_cop_names ||= legacy_cop_names.to_set).include?(name)
     end
 
     private

@@ -24,19 +24,30 @@ module RuboCop
     end
 
     def traverse_directories_upwards(start_dir, stop_dir = nil)
-      Pathname.new(start_dir).expand_path.ascend do |dir|
-        yield(dir)
-        dir = dir.to_s
-        break if dir == stop_dir || dir == FileFinder.root_level
-      end
+      each_directory_upwards(start_dir, stop_dir) { |dir| yield(Pathname.new(dir)) }
     end
 
     private
 
     def traverse_files_upwards(filename, start_dir, stop_dir)
-      traverse_directories_upwards(start_dir, stop_dir) do |dir|
-        file = dir + filename
-        yield(file.to_s) if file.exist?
+      each_directory_upwards(start_dir, stop_dir) do |dir|
+        file = File.join(dir, filename)
+        yield(file) if File.exist?(file)
+      end
+    end
+
+    # Plain strings are much faster here than `Pathname#ascend`.
+    def each_directory_upwards(start_dir, stop_dir)
+      dir = File.expand_path(start_dir)
+
+      loop do
+        yield(dir)
+        break if dir == stop_dir || dir == FileFinder.root_level
+
+        parent = File.dirname(dir)
+        break if parent == dir
+
+        dir = parent
       end
     end
   end
