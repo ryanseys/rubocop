@@ -81,8 +81,9 @@ module RuboCop
       @inspection_team_by_config = {}.compare_by_identity
 
       # Compute the cache source checksum once to avoid potential
-      # inconsistencies between workers.
-      ResultCache.source_checksum
+      # inconsistencies between workers. It reads every file RuboCop is
+      # made of, so a run that does not use the cache skips it.
+      ResultCache.source_checksum if cached_run?
 
       target_files = only_changed(find_target_files(paths))
       build_project_index(target_files)

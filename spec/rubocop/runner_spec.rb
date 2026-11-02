@@ -143,6 +143,17 @@ RSpec.describe RuboCop::Runner, :isolated_environment do
       end
     end
 
+    context 'with `--cache false`' do
+      let(:options) { super().merge(cache: 'false') }
+      let(:source) { "# frozen_string_literal: true\n" }
+
+      it 'does not compute the source checksum' do
+        expect(RuboCop::ResultCache).not_to receive(:source_checksum)
+
+        expect(runner.run([])).to be true
+      end
+    end
+
     context 'with a cop supporting multiple sources', :restore_registry do
       let(:source) { '' }
       let!(:persisting_cop_class) do
