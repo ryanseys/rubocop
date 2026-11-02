@@ -92,6 +92,9 @@ module RuboCop
         @options = options
         @standby_registry = nil
         @standby_cops = {}
+        @relevance_depends_on_file = {}.compare_by_identity
+        @relevance_regardless_of_file = {}.compare_by_identity
+        @enabled_for_config = {}.compare_by_identity
         reset
         @ready = true
         @registry = Registry.new(cops, options.dup)
@@ -261,13 +264,42 @@ module RuboCop
       end
 
       def roundup_relevant_cops(processed_source)
-        (cops + opted_in_standby_cops(processed_source)).select do |cop|
-          next false if cop.excluded_file?(processed_source.file_path)
-          next true if processed_source.comment_config.cop_opted_in?(cop)
-          next false unless @registry.enabled?(cop, @config)
+        file_path = processed_source.file_path
+        comment_config = processed_source.comment_config
 
-          support_target_ruby_version?(cop) && support_target_rails_version?(cop)
+        (cops + opted_in_standby_cops(processed_source)).select do |cop|
+          next false unless relevant_to_file?(cop, file_path)
+          next true if enabled_for_config?(cop)
+
+          comment_config.cop_opted_in?(cop)
         end
+      end
+
+      # Cops are re-created for every file but share the team's config, so the
+      # answers that do not depend on the file are kept per cop class.
+      def relevant_to_file?(cop, file_path)
+        return !cop.excluded_file?(file_path) if relevance_depends_on_file?(cop)
+
+        once_per_cop_class(@relevance_regardless_of_file, cop) { cop.relevant_file?(file_path) }
+      end
+
+      def relevance_depends_on_file?(cop)
+        once_per_cop_class(@relevance_depends_on_file, cop) do |cop_class|
+          cop_class.instance_method(:relevant_file?).owner != Base ||
+            cop_class.instance_method(:excluded_file?).owner != Base ||
+            cop.config.clusivity_config_for_badge?(cop_class.badge)
+        end
+      end
+
+      def enabled_for_config?(cop)
+        once_per_cop_class(@enabled_for_config, cop) do
+          @registry.enabled?(cop, @config) &&
+            support_target_ruby_version?(cop) && support_target_rails_version?(cop)
+        end
+      end
+
+      def once_per_cop_class(answers, cop)
+        answers.fetch(cop.class) { |cop_class| answers[cop_class] = yield(cop_class) }
       end
 
       # Cops that were not mobilized because they are disabled in the config,
