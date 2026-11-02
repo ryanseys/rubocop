@@ -502,6 +502,23 @@ RSpec.describe RuboCop::Runner, :isolated_environment do
 
         before { create_file('other.rb', source) }
 
+        it 'loads the enabled cops before forking the workers' do
+          # The runner may load `parallel` only once a run goes parallel.
+          require 'parallel'
+          events = []
+          allow(runner).to receive(:mobilized_cop_classes).and_wrap_original do |original, config|
+            events << :load_cops
+            original.call(config)
+          end
+          allow(Parallel).to receive(:each).and_wrap_original do |each, *args, **kwargs, &block|
+            events << :fork
+            each.call(*args, **kwargs, &block)
+          end
+          runner.run([])
+
+          expect(events.first(2)).to eq(%i[load_cops fork])
+        end
+
         it 'records the errors of a cop that crashes, in file order' do
           make_cop_fail(RuboCop::Cop::Style::FrozenStringLiteralComment, :on_new_investigation,
                         RuntimeError, 'boom')
