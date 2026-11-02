@@ -262,7 +262,14 @@ module RuboCop
     end
 
     def parallel_file_iterator(files, on_start, on_finish, &block)
+      load_enabled_cops(files)
       Parallel.each(files, start: on_start, finish: on_finish, &block)
+    end
+
+    # The workers fork from this process, so they share the cop classes loaded here.
+    def load_enabled_cops(files)
+      configs = files.map { |file| @config_store.for_file(file) }.uniq(&:object_id)
+      configs.each { |config| mobilized_cop_classes(config).enabled(config) }
     end
 
     def serial_file_iterator(files, on_start, on_finish, &block)
